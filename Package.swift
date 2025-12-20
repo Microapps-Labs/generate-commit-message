@@ -10,7 +10,7 @@ let package = Package(
         .executable(name: "gcm", targets: ["gcm"])
     ],
     dependencies: [
-        .package(url: "https://github.com/apple/swift-argument-parser", .upToNextMinor(from: "1.3.0"))
+        .package(url: "https://github.com/apple/swift-argument-parser", from: "1.3.0")
     ],
     targets: [
         .executableTarget(

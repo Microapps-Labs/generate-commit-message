@@ -21,33 +21,58 @@
 
       in
       {
-        packages.default = swiftPkgs.stdenv.mkDerivation {
+        packages.default = pkgs.stdenv.mkDerivation {
           pname = "gcm";
           version = "1.0.0";
           src = ./.;
 
           nativeBuildInputs = [
-            swiftPkgs.swift
-            swiftPkgs.swiftpm
             pkgs.git
             pkgs.cacert
-          ] ++ pkgs.lib.optionals isDarwin [
-            pkgs.apple-sdk_15
+          ] ++ pkgs.lib.optionals (!isDarwin) [
+            swiftPkgs.swift
+            swiftPkgs.swiftpm
           ];
 
           # Allow network access for Swift Package Manager to fetch dependencies
           __noChroot = true;
 
+          # On macOS, use system Swift toolchain for FoundationModels support
+          __impureHostDeps = pkgs.lib.optionals isDarwin [
+            "/usr/bin"
+            "/usr/lib"
+            "/System/Library/Frameworks"
+            "/Library/Developer/CommandLineTools"
+            "/Applications/Xcode.app"
+            "/var/db/xcode_select_link"
+          ];
+
           buildPhase = ''
             export HOME=$TMPDIR
             export SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt
             export GIT_SSL_CAINFO=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt
+          '' + (if isDarwin then ''
+            # Use Xcode's Swift toolchain for FoundationModels support (Apple Intelligence)
+            export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+            export PATH="/usr/bin:$PATH"
+            # Unset nix's SDKROOT which points to an incompatible SDK version
+            unset SDKROOT
+            unset NIX_CFLAGS_COMPILE
+            unset NIX_LDFLAGS
+            /usr/bin/xcrun swift build -c release --disable-sandbox
+          '' else ''
             swift build -c release
-          '';
+          '');
+
+          # Disable fixup phase on Darwin as it uses GNU-style options
+          dontFixup = isDarwin;
 
           installPhase = ''
             mkdir -p $out/bin
             cp .build/release/gcm $out/bin/
+          '' + pkgs.lib.optionalString isDarwin ''
+            # Re-sign the binary for macOS code signature validation
+            /usr/bin/codesign --force --sign - $out/bin/gcm
           '';
 
           meta = with pkgs.lib; {
@@ -66,11 +91,9 @@
 
         # Development shell
         devShells.default = pkgs.mkShell {
-          buildInputs = [
+          buildInputs = pkgs.lib.optionals (!isDarwin) [
             swiftPkgs.swift
             swiftPkgs.swiftpm
-          ] ++ pkgs.lib.optionals isDarwin [
-            pkgs.apple-sdk_15
           ];
 
           shellHook = ''
