@@ -1,4 +1,4 @@
-# gcm
+# gcm (generate-commit-message)
 
 AI-powered git commit messages. Stop staring at blank commit prompts.
 
@@ -19,7 +19,14 @@ feat(auth): add JWT token refresh mechanism
 ## Install
 
 ```bash
-# Build from source
+# Clone
+git clone https://github.com/yourusername/generate-commit-message.git
+cd generate-commit-message
+
+# Build and install
+make install  # Installs to ~/bin/gcm
+
+# Or build from source
 swift build -c release
 cp .build/release/gcm /usr/local/bin/
 
@@ -72,15 +79,21 @@ export GCM_MODEL="anthropic/claude-3.5-sonnet"  # Optional
 
 ## Smart Features
 
+- **Intelligent diff parsing**: File categorization, statistics, rename detection
+- **Multi-step refinement**: Validates and improves message quality
 - **Branch inference**: `feature/auth` → `feat(auth):`, `fix/login-bug` → `fix(login):`
 - **Style matching**: Analyzes recent commits to match your repo's style
-- **Context-aware**: Considers staged diff, file changes, and branch name
+- **Context-aware**: File stats, categories, and smart sampling for large changesets
 
 ## Requirements
 
 - macOS 13+ or Linux
 - Swift 5.9+
 - For Apple Intelligence: macOS 26+ with Apple Silicon
+
+## Author
+
+Created by [Oleg Pustovit](https://github.com/snowbear)
 
 ## License
 
