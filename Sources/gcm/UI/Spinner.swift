@@ -1,14 +1,19 @@
 import Foundation
 
 /// Minimal terminal spinner with streaming text support
-@MainActor
-final class Spinner {
+final class Spinner: @unchecked Sendable {
     private let frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
     private var currentFrame = 0
     private var isRunning = false
     private var task: Task<Void, Never>?
-    private var message: String
-    private var streamedText: String = ""
+    private let message: String
+    private let lock = NSLock()
+    private var _streamedText: String = ""
+
+    private var streamedText: String {
+        get { lock.withLock { _streamedText } }
+        set { lock.withLock { _streamedText = newValue } }
+    }
 
     init(_ message: String) {
         self.message = message
@@ -20,13 +25,13 @@ final class Spinner {
         currentFrame = 0
         streamedText = ""
 
-        // Hide cursor
         FileHandle.standardError.write(Data("\u{001B}[?25l".utf8))
 
-        task = Task {
+        task = Task.detached { [self] in
             while self.isRunning {
                 let frame = self.frames[self.currentFrame % self.frames.count]
-                let display = self.streamedText.isEmpty ? self.message : self.streamedText
+                let text = self.streamedText
+                let display = text.isEmpty ? self.message : text
                 FileHandle.standardError.write(Data("\r\u{001B}[K\(frame) \(display)".utf8))
                 self.currentFrame += 1
                 try? await Task.sleep(nanoseconds: 80_000_000)
@@ -41,7 +46,6 @@ final class Spinner {
     func stop() {
         isRunning = false
         task?.cancel()
-        // Clear line and show cursor
         FileHandle.standardError.write(Data("\r\u{001B}[K\u{001B}[?25h".utf8))
     }
 }

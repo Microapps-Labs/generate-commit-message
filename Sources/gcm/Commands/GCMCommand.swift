@@ -44,16 +44,15 @@ struct GCMCommand: AsyncParsableCommand {
             throw ExitCode.failure
         }
 
-        // Analyze with spinner
-        let analyzeSpinner = await Spinner("Analyzing")
-        await analyzeSpinner.start()
+        let analyzeSpinner = Spinner("Analyzing")
+        analyzeSpinner.start()
 
         let context: GitContext
         do {
             context = try await gitAnalyzer.analyze()
-            await analyzeSpinner.stop()
+            analyzeSpinner.stop()
         } catch {
-            await analyzeSpinner.stop()
+            analyzeSpinner.stop()
             printError("No staged changes. Run: git add <files>")
             throw ExitCode.failure
         }
@@ -63,7 +62,6 @@ struct GCMCommand: AsyncParsableCommand {
             print("Files: \(context.filesSummary)")
         }
 
-        // Get backend
         let backend = await AIBackendFactory.createBackend()
 
         guard await backend.isAvailable else {
@@ -71,9 +69,8 @@ struct GCMCommand: AsyncParsableCommand {
             throw ExitCode.failure
         }
 
-        // Generate with streaming spinner
-        let spinner = await Spinner("Generating")
-        await spinner.start()
+        let spinner = Spinner("Generating")
+        spinner.start()
 
         let message: String
         do {
@@ -81,18 +78,15 @@ struct GCMCommand: AsyncParsableCommand {
                 context: context,
                 config: config
             ) { token in
-                Task { @MainActor in
-                    spinner.stream(token)
-                }
+                spinner.stream(token)
             }
-            await spinner.stop()
+            spinner.stop()
         } catch {
-            await spinner.stop()
+            spinner.stop()
             printError("Generation failed: \(error.localizedDescription)")
             throw ExitCode.failure
         }
 
-        // Handle output
         if dryRun {
             print(message)
             return
@@ -111,7 +105,6 @@ struct GCMCommand: AsyncParsableCommand {
             return
         }
 
-        // Commit
         do {
             try await executeCommit(message: message)
             print(message)
