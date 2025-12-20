@@ -4,18 +4,19 @@ struct PromptBuilder {
     let config: GCMConfiguration
 
     func buildPrompt(for context: GitContext) -> String {
-        var prompt = "Generate a commit message for these changes:\n\n"
+        var prompt = ""
 
-        // Files changed
-        prompt += "Files: \(formatStagedFiles(context.stagedFiles))\n\n"
-
-        // Diff
-        prompt += "Diff:\n\(truncateDiff(context.stagedDiff))\n"
-
-        // Custom instructions
-        if let custom = config.customInstructions, !custom.isEmpty {
-            prompt += "\nNote: \(custom)"
+        // Branch context for type inference
+        if let inferredType = context.inferredType {
+            prompt += "Branch suggests type: \(inferredType)\n"
         }
+
+        // Files summary
+        let files = context.stagedFiles.map { $0.path.split(separator: "/").last ?? Substring($0.path) }
+        prompt += "Changed: \(files.joined(separator: ", "))\n\n"
+
+        // Diff (truncated)
+        prompt += truncateDiff(context.stagedDiff)
 
         return prompt
     }
@@ -24,63 +25,80 @@ struct PromptBuilder {
         switch config.commitStyle {
         case .conventional:
             return """
-            Generate a conventional commit message. Format: type(scope): description
+            Write a git commit message in conventional commits format.
 
-            Types: \(config.conventionalTypes.prefix(7).joined(separator: ", "))
+            Format: type(scope): short description
 
-            Examples:
-            - feat(auth): add login with OAuth
-            - fix(api): handle null response
-            - refactor(utils): simplify date parsing
-            - docs(readme): update install instructions
+            Types:
+            - feat: new feature
+            - fix: bug fix
+            - refactor: code change that neither fixes a bug nor adds a feature
+            - docs: documentation only
+            - style: formatting, missing semicolons, etc
+            - test: adding tests
+            - chore: maintenance
+
+            Good examples:
+            - feat(auth): add Google OAuth login
+            - fix(parser): handle empty input gracefully
+            - refactor(api): extract validation logic
+            - docs: update installation guide
+
+            Bad examples (DO NOT do this):
+            - feat: add feature (too vague)
+            - fix bug (missing type format)
+            - Updated the code (not imperative, no type)
 
             Rules:
-            - Lowercase description, no period at end
-            - Max \(config.maxLength) chars
-            - Output ONLY the commit message, nothing else
+            - Scope is optional but helpful
+            - Use imperative mood ("add" not "added")
+            - Lowercase, no period at end
+            - Be specific about WHAT changed
+            - Max \(config.maxLength) characters
+            - Output ONLY the commit message
             """
 
         case .gitmoji:
             return """
-            Generate a commit message with emoji prefix.
+            Write a git commit message with an emoji prefix.
 
-            Examples:
-            - ✨ add user profile page
-            - 🐛 fix login timeout issue
-            - ♻️ refactor database queries
-            - 📝 update API documentation
+            Good examples:
+            - ✨ add dark mode toggle
+            - 🐛 fix login timeout on slow networks
+            - ♻️ extract helper functions from main module
+            - 📝 document API rate limits
+
+            Common emojis:
+            ✨ feature, 🐛 bugfix, ♻️ refactor, 📝 docs, 🎨 style, ✅ tests, 🔧 config
 
             Rules:
-            - Start with relevant emoji
-            - Max \(config.maxLength) chars
-            - Output ONLY the commit message, nothing else
+            - Start with ONE emoji
+            - Be specific about the change
+            - Max \(config.maxLength) characters
+            - Output ONLY the commit message
             """
 
         case .simple:
             return """
-            Generate a simple commit message.
+            Write a simple git commit message.
 
-            Examples:
-            - Add user authentication
-            - Fix memory leak in cache
-            - Update dependencies
-            - Refactor payment module
+            Good examples:
+            - Add user profile page
+            - Fix memory leak in image cache
+            - Refactor database connection pooling
+            - Update README with Docker instructions
 
             Rules:
-            - Start with capital verb (Add, Fix, Update, etc.)
-            - Max \(config.maxLength) chars
-            - Output ONLY the commit message, nothing else
+            - Start with capital verb (Add, Fix, Update, Refactor, Remove)
+            - Be specific about WHAT changed
+            - Max \(config.maxLength) characters
+            - Output ONLY the commit message
             """
         }
     }
 
-    private func formatStagedFiles(_ files: [StagedFile]) -> String {
-        if files.isEmpty { return "(none)" }
-        return files.map { "\($0.status.rawValue) \($0.path)" }.joined(separator: ", ")
-    }
-
-    private func truncateDiff(_ diff: String, maxLength: Int = 6000) -> String {
+    private func truncateDiff(_ diff: String, maxLength: Int = 4000) -> String {
         if diff.count <= maxLength { return diff }
-        return String(diff.prefix(maxLength)) + "\n[truncated]"
+        return String(diff.prefix(maxLength)) + "\n..."
     }
 }

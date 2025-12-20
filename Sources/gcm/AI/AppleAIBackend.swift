@@ -3,25 +3,19 @@ import Foundation
 #if canImport(FoundationModels)
 import FoundationModels
 
-/// AI backend using Apple's on-device Foundation Models framework
-/// Available on macOS 26+, iOS 26+
 @available(macOS 26.0, iOS 26.0, *)
 final class AppleAIBackend: AIBackend {
 
-    var name: String { "Apple Foundation Models" }
+    var name: String { "Apple Intelligence" }
     var supportsStreaming: Bool { true }
 
     var isAvailable: Bool {
         get async {
             let model = SystemLanguageModel.default
-            switch model.availability {
-            case .available:
+            if case .available = model.availability {
                 return true
-            case .unavailable:
-                return false
-            @unknown default:
-                return false
             }
+            return false
         }
     }
 
@@ -40,71 +34,63 @@ final class AppleAIBackend: AIBackend {
         let model = SystemLanguageModel.default
 
         guard case .available = model.availability else {
-            throw AIBackendError.unavailable(reason: "Apple Intelligence not enabled on this device")
+            throw AIBackendError.unavailable(reason: "Apple Intelligence not enabled")
         }
 
         let promptBuilder = PromptBuilder(config: config)
-        let systemPrompt = promptBuilder.buildSystemPrompt()
-        let userPrompt = promptBuilder.buildPrompt(for: context)
-
-        let session = LanguageModelSession(instructions: systemPrompt)
+        let session = LanguageModelSession(instructions: promptBuilder.buildSystemPrompt())
 
         var fullContent = ""
-
-        // Use streaming response
-        let stream = session.streamResponse(to: userPrompt)
+        let stream = session.streamResponse(to: promptBuilder.buildPrompt(for: context))
 
         for try await partial in stream {
-            // Get the current content from the snapshot
-            let currentContent = partial.content
-
-            // Calculate new tokens since last update
-            if currentContent.count > fullContent.count {
-                let newContent = String(currentContent.dropFirst(fullContent.count))
-                if !newContent.isEmpty {
-                    onToken(newContent)
-                }
+            let current = partial.content
+            if current.count > fullContent.count {
+                let delta = String(current.dropFirst(fullContent.count))
+                onToken(delta)
             }
-            fullContent = currentContent
+            fullContent = current
         }
 
-        return cleanCommitMessage(fullContent)
+        return cleanMessage(fullContent)
     }
 
-    private func cleanCommitMessage(_ message: String) -> String {
-        var cleaned = message.trimmingCharacters(in: .whitespacesAndNewlines)
+    private func cleanMessage(_ msg: String) -> String {
+        var s = msg.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        if (cleaned.hasPrefix("\"") && cleaned.hasSuffix("\"")) ||
-           (cleaned.hasPrefix("'") && cleaned.hasSuffix("'")) {
-            cleaned = String(cleaned.dropFirst().dropLast())
+        // Remove quotes
+        if (s.hasPrefix("\"") && s.hasSuffix("\"")) || (s.hasPrefix("'") && s.hasSuffix("'")) {
+            s = String(s.dropFirst().dropLast())
         }
 
-        if cleaned.hasPrefix("```") {
-            let lines = cleaned.split(separator: "\n", omittingEmptySubsequences: false)
-            let filtered = lines.filter { !$0.hasPrefix("```") }
-            cleaned = filtered.joined(separator: "\n")
+        // Remove code blocks
+        if s.hasPrefix("```") {
+            s = s.split(separator: "\n", omittingEmptySubsequences: false)
+                .filter { !$0.hasPrefix("```") }
+                .joined(separator: "\n")
         }
 
-        return cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Take first line only if multiple lines
+        if let firstLine = s.split(separator: "\n").first {
+            s = String(firstLine)
+        }
+
+        return s.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 
 #else
 
-/// Stub implementation when FoundationModels is not available (Linux, older macOS)
 final class AppleAIBackend: AIBackend {
-    var name: String { "Apple Foundation Models (unavailable)" }
+    var name: String { "Apple Intelligence (unavailable)" }
     var supportsStreaming: Bool { false }
 
     var isAvailable: Bool {
         get async { false }
     }
 
-    func generateCommitMessage(
-        context: GitContext,
-        config: GCMConfiguration
-    ) async throws -> String {
-        throw AIBackendError.unavailable(reason: "Apple Foundation Models not available on this platform")
+    func generateCommitMessage(context: GitContext, config: GCMConfiguration) async throws -> String {
+        throw AIBackendError.unavailable(reason: "Apple Intelligence not available on this platform")
     }
 }
 
