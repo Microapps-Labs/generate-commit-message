@@ -149,7 +149,11 @@ struct GitAnalyzer {
         // Docs
         if filename.hasSuffix(".md") || filename.hasSuffix(".txt") ||
            filename.hasSuffix(".rst") || filename.hasSuffix(".adoc") ||
-           lower.contains("/docs/") {
+           lower.contains("/docs/") ||
+           filename == "license" || filename == "authors" ||
+           filename == "changelog" || filename == "contributing" ||
+           filename == "readme" || filename == "notice" ||
+           filename == "history" || filename == "contributors" {
             return .doc
         }
 

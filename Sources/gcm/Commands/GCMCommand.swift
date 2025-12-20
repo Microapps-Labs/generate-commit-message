@@ -72,11 +72,25 @@ struct GCMCommand: AsyncParsableCommand {
         // Debug mode: dump prompt
         if ProcessInfo.processInfo.environment["DEBUG"] != nil {
             let promptBuilder = PromptBuilder(config: config)
+            #if canImport(FoundationModels)
+            if #available(macOS 26.0, *), backend is AppleAIBackend {
+                print("\n=== DEBUG: FEW-SHOT PROMPT (@Generable) ===")
+                print(promptBuilder.buildFewShotPrompt(for: context))
+                print("\n=== END DEBUG ===\n")
+            } else {
+                print("\n=== DEBUG: SYSTEM PROMPT ===")
+                print(promptBuilder.buildSystemPrompt())
+                print("\n=== DEBUG: USER PROMPT ===")
+                print(promptBuilder.buildPrompt(for: context))
+                print("\n=== END DEBUG ===\n")
+            }
+            #else
             print("\n=== DEBUG: SYSTEM PROMPT ===")
             print(promptBuilder.buildSystemPrompt())
             print("\n=== DEBUG: USER PROMPT ===")
             print(promptBuilder.buildPrompt(for: context))
             print("\n=== END DEBUG ===\n")
+            #endif
         }
 
         let spinner = Spinner("Generating")
