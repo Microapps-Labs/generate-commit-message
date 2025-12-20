@@ -9,6 +9,7 @@ import FoundationModels
 final class AppleAIBackend: AIBackend {
 
     var name: String { "Apple Foundation Models" }
+    var supportsStreaming: Bool { true }
 
     var isAvailable: Bool {
         get async {
@@ -28,6 +29,14 @@ final class AppleAIBackend: AIBackend {
         context: GitContext,
         config: GCMConfiguration
     ) async throws -> String {
+        try await generateCommitMessageStreaming(context: context, config: config) { _ in }
+    }
+
+    func generateCommitMessageStreaming(
+        context: GitContext,
+        config: GCMConfiguration,
+        onToken: @escaping StreamCallback
+    ) async throws -> String {
         let model = SystemLanguageModel.default
 
         guard case .available = model.availability else {
@@ -38,25 +47,38 @@ final class AppleAIBackend: AIBackend {
         let systemPrompt = promptBuilder.buildSystemPrompt()
         let userPrompt = promptBuilder.buildPrompt(for: context)
 
-        let session = LanguageModelSession(
-            instructions: systemPrompt
-        )
+        let session = LanguageModelSession(instructions: systemPrompt)
 
-        let response = try await session.respond(to: userPrompt)
-        return cleanCommitMessage(response.content)
+        var fullContent = ""
+
+        // Use streaming response
+        let stream = session.streamResponse(to: userPrompt)
+
+        for try await partial in stream {
+            // Get the current content from the snapshot
+            let currentContent = partial.content
+
+            // Calculate new tokens since last update
+            if currentContent.count > fullContent.count {
+                let newContent = String(currentContent.dropFirst(fullContent.count))
+                if !newContent.isEmpty {
+                    onToken(newContent)
+                }
+            }
+            fullContent = currentContent
+        }
+
+        return cleanCommitMessage(fullContent)
     }
 
-    /// Clean up the commit message (remove quotes, markdown, etc.)
     private func cleanCommitMessage(_ message: String) -> String {
         var cleaned = message.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        // Remove surrounding quotes if present
         if (cleaned.hasPrefix("\"") && cleaned.hasSuffix("\"")) ||
            (cleaned.hasPrefix("'") && cleaned.hasSuffix("'")) {
             cleaned = String(cleaned.dropFirst().dropLast())
         }
 
-        // Remove markdown code block if present
         if cleaned.hasPrefix("```") {
             let lines = cleaned.split(separator: "\n", omittingEmptySubsequences: false)
             let filtered = lines.filter { !$0.hasPrefix("```") }
@@ -72,6 +94,7 @@ final class AppleAIBackend: AIBackend {
 /// Stub implementation when FoundationModels is not available (Linux, older macOS)
 final class AppleAIBackend: AIBackend {
     var name: String { "Apple Foundation Models (unavailable)" }
+    var supportsStreaming: Bool { false }
 
     var isAvailable: Bool {
         get async { false }

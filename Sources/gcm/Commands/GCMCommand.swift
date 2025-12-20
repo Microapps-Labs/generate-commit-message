@@ -45,7 +45,7 @@ struct GCMCommand: AsyncParsableCommand {
         }
 
         // Analyze with spinner
-        let analyzeSpinner = Spinner("Analyzing changes")
+        let analyzeSpinner = Spinner("Analyzing")
         analyzeSpinner.start()
 
         let context: GitContext
@@ -71,16 +71,21 @@ struct GCMCommand: AsyncParsableCommand {
             throw ExitCode.failure
         }
 
-        // Generate with spinner
-        let generateSpinner = Spinner("Generating")
-        generateSpinner.start()
+        // Generate with streaming spinner
+        let spinner = Spinner("Generating")
+        spinner.start()
 
         let message: String
         do {
-            message = try await backend.generateCommitMessage(context: context, config: config)
-            generateSpinner.stop()
+            message = try await backend.generateCommitMessageStreaming(
+                context: context,
+                config: config
+            ) { token in
+                spinner.stream(token)
+            }
+            spinner.stop()
         } catch {
-            generateSpinner.stop()
+            spinner.stop()
             printError("Generation failed: \(error.localizedDescription)")
             throw ExitCode.failure
         }

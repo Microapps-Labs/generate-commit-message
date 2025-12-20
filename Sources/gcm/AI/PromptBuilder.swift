@@ -79,7 +79,15 @@ struct PromptBuilder {
     /// Build the system prompt for the AI
     func buildSystemPrompt() -> String {
         """
-        You are a git commit message generator. Generate concise, informative commit messages following the user's specified style guidelines. Only output the commit message, nothing else. Do not wrap it in quotes or markdown code blocks.
+        You are a git commit message generator. Generate SHORT, concise commit messages.
+
+        Rules:
+        - Subject line MUST be under \(config.maxLength) characters
+        - Be brief and direct - no fluff
+        - No markdown, no quotes, no code blocks
+        - Only output the commit message itself, nothing else
+        - Prefer single-line messages unless changes are complex
+        - Do NOT explain what a commit message is or add meta-commentary
         """
     }
 

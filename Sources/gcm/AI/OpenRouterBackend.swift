@@ -7,10 +7,10 @@ final class OpenRouterBackend: AIBackend {
     private let defaultModel = "anthropic/claude-3.5-sonnet"
 
     var name: String { "OpenRouter API" }
+    var supportsStreaming: Bool { true }
 
     var isAvailable: Bool {
         get async {
-            // Available if API key is set
             return getApiKey() != nil
         }
     }
@@ -18,6 +18,14 @@ final class OpenRouterBackend: AIBackend {
     func generateCommitMessage(
         context: GitContext,
         config: GCMConfiguration
+    ) async throws -> String {
+        try await generateCommitMessageStreaming(context: context, config: config) { _ in }
+    }
+
+    func generateCommitMessageStreaming(
+        context: GitContext,
+        config: GCMConfiguration,
+        onToken: @escaping StreamCallback
     ) async throws -> String {
         guard let apiKey = getApiKey() else {
             throw AIBackendError.apiKeyMissing
@@ -35,21 +43,48 @@ final class OpenRouterBackend: AIBackend {
             apiKey: apiKey,
             model: model,
             systemPrompt: systemPrompt,
-            userPrompt: userPrompt
+            userPrompt: userPrompt,
+            stream: true
         )
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        var fullContent = ""
+
+        let (bytes, response) = try await URLSession.shared.bytes(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw AIBackendError.invalidResponse("Not an HTTP response")
         }
 
         guard (200...299).contains(httpResponse.statusCode) else {
-            let errorBody = String(data: data, encoding: .utf8) ?? "Unknown error"
+            // Collect error body
+            var errorData = Data()
+            for try await byte in bytes {
+                errorData.append(byte)
+            }
+            let errorBody = String(data: errorData, encoding: .utf8) ?? "Unknown error"
             throw AIBackendError.invalidResponse("HTTP \(httpResponse.statusCode): \(errorBody)")
         }
 
-        return try parseResponse(data)
+        // Process SSE stream
+        for try await line in bytes.lines {
+            guard line.hasPrefix("data: ") else { continue }
+            let jsonStr = String(line.dropFirst(6))
+
+            if jsonStr == "[DONE]" { break }
+
+            guard let data = jsonStr.data(using: .utf8),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let choices = json["choices"] as? [[String: Any]],
+                  let delta = choices.first?["delta"] as? [String: Any],
+                  let content = delta["content"] as? String else {
+                continue
+            }
+
+            fullContent += content
+            onToken(content)
+        }
+
+        return cleanCommitMessage(fullContent)
     }
 
     // MARK: - Private Helpers
@@ -75,7 +110,8 @@ final class OpenRouterBackend: AIBackend {
         apiKey: String,
         model: String,
         systemPrompt: String,
-        userPrompt: String
+        userPrompt: String,
+        stream: Bool = false
     ) throws -> URLRequest {
         guard let url = URL(string: apiUrl) else {
             throw AIBackendError.invalidResponse("Invalid API URL: \(apiUrl)")
@@ -88,47 +124,24 @@ final class OpenRouterBackend: AIBackend {
         request.addValue("gcm-cli", forHTTPHeaderField: "X-Title")
         request.addValue("https://github.com/gcm-cli", forHTTPHeaderField: "HTTP-Referer")
 
-        let body: [String: Any] = [
+        var body: [String: Any] = [
             "model": model,
             "messages": [
-                [
-                    "role": "system",
-                    "content": systemPrompt
-                ],
-                [
-                    "role": "user",
-                    "content": userPrompt
-                ]
+                ["role": "system", "content": systemPrompt],
+                ["role": "user", "content": userPrompt]
             ],
             "max_tokens": 500,
             "temperature": 0.3
         ]
 
+        if stream {
+            body["stream"] = true
+        }
+
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         return request
     }
 
-    private func parseResponse(_ data: Data) throws -> String {
-        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            throw AIBackendError.invalidResponse("Could not parse JSON response")
-        }
-
-        guard let choices = json["choices"] as? [[String: Any]],
-              let firstChoice = choices.first,
-              let message = firstChoice["message"] as? [String: Any],
-              let content = message["content"] as? String else {
-            // Check for error message
-            if let error = json["error"] as? [String: Any],
-               let errorMessage = error["message"] as? String {
-                throw AIBackendError.generationFailed(errorMessage)
-            }
-            throw AIBackendError.invalidResponse("Could not extract message content from response")
-        }
-
-        return cleanCommitMessage(content)
-    }
-
-    /// Clean up the commit message (remove quotes, markdown, etc.)
     private func cleanCommitMessage(_ message: String) -> String {
         var cleaned = message.trimmingCharacters(in: .whitespacesAndNewlines)
 

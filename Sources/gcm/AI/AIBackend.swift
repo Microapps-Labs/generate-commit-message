@@ -1,5 +1,8 @@
 import Foundation
 
+/// Callback for streaming token updates
+typealias StreamCallback = (String) -> Void
+
 /// Protocol defining the AI backend interface for commit message generation
 protocol AIBackend {
     /// Human-readable name for this backend
@@ -7,6 +10,9 @@ protocol AIBackend {
 
     /// Check if this backend is available on the current system
     var isAvailable: Bool { get async }
+
+    /// Whether this backend supports streaming
+    var supportsStreaming: Bool { get }
 
     /// Generate a commit message from the given git context
     /// - Parameters:
@@ -17,6 +23,34 @@ protocol AIBackend {
         context: GitContext,
         config: GCMConfiguration
     ) async throws -> String
+
+    /// Generate a commit message with streaming output
+    /// - Parameters:
+    ///   - context: The git repository context
+    ///   - config: User configuration
+    ///   - onToken: Callback invoked for each token/chunk received
+    /// - Returns: Complete generated commit message
+    func generateCommitMessageStreaming(
+        context: GitContext,
+        config: GCMConfiguration,
+        onToken: @escaping StreamCallback
+    ) async throws -> String
+}
+
+// Default implementation for non-streaming backends
+extension AIBackend {
+    var supportsStreaming: Bool { false }
+
+    func generateCommitMessageStreaming(
+        context: GitContext,
+        config: GCMConfiguration,
+        onToken: @escaping StreamCallback
+    ) async throws -> String {
+        // Fallback: generate normally, then emit all at once
+        let result = try await generateCommitMessage(context: context, config: config)
+        onToken(result)
+        return result
+    }
 }
 
 /// Errors that can occur during AI operations
