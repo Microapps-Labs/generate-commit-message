@@ -93,8 +93,9 @@ export GCM_MODEL="anthropic/claude-3.5-sonnet"  # Optional
 
 ## Author
 
-Created by [Oleg Pustovit](https://github.com/snowbear)
+Created by [Oleg Pustovit](https://github.com/nexo-tech)
 
 ## License
 
 MIT
+
