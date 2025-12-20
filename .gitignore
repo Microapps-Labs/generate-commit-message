@@ -31,3 +31,5 @@ DerivedData/
 # Build outputs
 *.o
 *.dSYM/
+result
+
