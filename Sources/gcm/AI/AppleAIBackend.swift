@@ -65,18 +65,6 @@ final class AppleAIBackend: AIBackend {
     }
 }
 
-extension CategorizedFiles {
-    func count(for category: FileCategory) -> Int {
-        switch category {
-        case .code: return code.count
-        case .test: return tests.count
-        case .doc: return docs.count
-        case .config: return config.count
-        case .other: return other.count
-        }
-    }
-}
-
 #else
 
 final class AppleAIBackend: AIBackend {
@@ -97,3 +85,15 @@ final class AppleAIBackend: AIBackend {
 }
 
 #endif
+
+extension CategorizedFiles {
+    func count(for category: FileCategory) -> Int {
+        switch category {
+        case .code: return code.count
+        case .test: return tests.count
+        case .doc: return docs.count
+        case .config: return config.count
+        case .other: return other.count
+        }
+    }
+}

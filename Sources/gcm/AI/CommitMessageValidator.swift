@@ -85,12 +85,12 @@ struct CommitMessageValidator {
     }
 
     private func determinePrimaryCategory(_ categorized: CategorizedFiles) -> FileCategory {
-        let categories = [
-            (FileCategory.code, categorized.code.count),
-            (FileCategory.test, categorized.tests.count),
-            (FileCategory.doc, categorized.docs.count),
-            (FileCategory.config, categorized.config.count),
-            (FileCategory.other, categorized.other.count)
+        let categories: [(FileCategory, Int)] = [
+            (.code, categorized.code.count),
+            (.test, categorized.tests.count),
+            (.doc, categorized.docs.count),
+            (.config, categorized.config.count),
+            (.other, categorized.other.count)
         ]
 
         return categories.max(by: { $0.1 < $1.1 })?.0 ?? .other

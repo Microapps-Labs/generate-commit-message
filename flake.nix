@@ -28,16 +28,21 @@
 
           nativeBuildInputs = [
             swiftPkgs.swift
+            swiftPkgs.swiftpm
+            pkgs.git
+            pkgs.cacert
           ] ++ pkgs.lib.optionals isDarwin [
-            pkgs.darwin.apple_sdk.frameworks.Foundation
+            pkgs.apple-sdk_15
           ];
 
-          # Disable sandbox as Swift Package Manager needs network access during build
-          # In a proper setup, you'd vendor dependencies
+          # Allow network access for Swift Package Manager to fetch dependencies
+          __noChroot = true;
+
           buildPhase = ''
             export HOME=$TMPDIR
-            export SWIFT_PACKAGE_MANAGER_NO_CACHE=1
-            swift build -c release --disable-sandbox
+            export SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt
+            export GIT_SSL_CAINFO=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt
+            swift build -c release
           '';
 
           installPhase = ''
@@ -63,8 +68,9 @@
         devShells.default = pkgs.mkShell {
           buildInputs = [
             swiftPkgs.swift
+            swiftPkgs.swiftpm
           ] ++ pkgs.lib.optionals isDarwin [
-            pkgs.darwin.apple_sdk.frameworks.Foundation
+            pkgs.apple-sdk_15
           ];
 
           shellHook = ''
