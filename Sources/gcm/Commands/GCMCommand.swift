@@ -69,6 +69,16 @@ struct GCMCommand: AsyncParsableCommand {
             throw ExitCode.failure
         }
 
+        // Debug mode: dump prompt
+        if ProcessInfo.processInfo.environment["DEBUG"] != nil {
+            let promptBuilder = PromptBuilder(config: config)
+            print("\n=== DEBUG: SYSTEM PROMPT ===")
+            print(promptBuilder.buildSystemPrompt())
+            print("\n=== DEBUG: USER PROMPT ===")
+            print(promptBuilder.buildPrompt(for: context))
+            print("\n=== END DEBUG ===\n")
+        }
+
         let spinner = Spinner("Generating")
         spinner.start()
 
