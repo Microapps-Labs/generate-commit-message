@@ -30,7 +30,6 @@ struct GCMCommand: AsyncParsableCommand {
     var initConfig = false
 
     func run() async throws {
-        // Handle --init-config flag
         if initConfig {
             try handleInitConfig()
             return
@@ -38,43 +37,55 @@ struct GCMCommand: AsyncParsableCommand {
 
         let configManager = ConfigManager()
         let config = try configManager.loadConfiguration()
-
         let gitAnalyzer = GitAnalyzer()
 
-        // Verify we're in a git repository
         guard await gitAnalyzer.isGitRepository() else {
-            throw GitAnalyzerError.notAGitRepository
+            printError("Not a git repository")
+            throw ExitCode.failure
         }
 
-        // Analyze git context
-        if verbose { printInfo("Analyzing git context...") }
-        let context = try await gitAnalyzer.analyze()
+        // Analyze with spinner
+        let analyzeSpinner = Spinner("Analyzing changes")
+        analyzeSpinner.start()
+
+        let context: GitContext
+        do {
+            context = try await gitAnalyzer.analyze()
+            analyzeSpinner.stop()
+        } catch {
+            analyzeSpinner.stop()
+            printError("No staged changes. Run: git add <files>")
+            throw ExitCode.failure
+        }
 
         if verbose {
-            printInfo("Branch: \(context.branchName)")
-            printInfo("Staged files: \(context.filesSummary)")
-            if let inferredType = context.inferredType {
-                printInfo("Inferred type: \(inferredType)")
-            }
+            print("Branch: \(context.branchName)")
+            print("Files: \(context.filesSummary)")
         }
 
-        // Get AI backend
+        // Get backend
         let backend = await AIBackendFactory.createBackend()
 
-        if verbose {
-            printInfo("Using backend: \(backend.name)")
-        }
-
-        // Check if backend is available
         guard await backend.isAvailable else {
-            throw AIBackendError.apiKeyMissing
+            printError("Set GCM_API_KEY for API access")
+            throw ExitCode.failure
         }
 
-        // Generate commit message
-        if verbose { printInfo("Generating commit message...") }
-        let message = try await backend.generateCommitMessage(context: context, config: config)
+        // Generate with spinner
+        let generateSpinner = Spinner("Generating")
+        generateSpinner.start()
 
-        // Handle based on flags
+        let message: String
+        do {
+            message = try await backend.generateCommitMessage(context: context, config: config)
+            generateSpinner.stop()
+        } catch {
+            generateSpinner.stop()
+            printError("Generation failed: \(error.localizedDescription)")
+            throw ExitCode.failure
+        }
+
+        // Handle output
         if dryRun {
             print(message)
             return
@@ -82,26 +93,25 @@ struct GCMCommand: AsyncParsableCommand {
 
         if noCommit {
             let editor = EditorLauncher()
-            printInfo("Opening in \(editor.preferredEditor)...")
             let editedMessage = try editor.edit(message)
 
             if editedMessage.isEmpty {
-                printError("Commit message is empty. Aborting.")
+                printError("Empty message, aborting")
                 throw ExitCode.failure
             }
 
-            print("\nGenerated commit message:")
-            print("---")
             print(editedMessage)
-            print("---")
-            print("\nUse this message with: git commit -m \"<message>\"")
             return
         }
 
-        // Default: commit with generated message
-        try await executeCommit(message: message)
-        printSuccess("Committed with message:")
-        print(message)
+        // Commit
+        do {
+            try await executeCommit(message: message)
+            print(message)
+        } catch {
+            printError("Commit failed")
+            throw ExitCode.failure
+        }
     }
 
     private func handleInitConfig() throws {
@@ -109,12 +119,12 @@ struct GCMCommand: AsyncParsableCommand {
         let configPath = GCMConfiguration.defaultConfigPath
 
         if FileManager.default.fileExists(atPath: configPath.path) {
-            printInfo("Config file already exists at: \(configPath.path)")
+            print("Config exists: \(configPath.path)")
             return
         }
 
         try configManager.saveConfiguration(GCMConfiguration())
-        printSuccess("Created default config at: \(configPath.path)")
+        print("Created: \(configPath.path)")
     }
 
     private func executeCommit(message: String) async throws {
@@ -122,17 +132,7 @@ struct GCMCommand: AsyncParsableCommand {
         _ = try await executor.run("git", arguments: ["commit", "-m", message])
     }
 
-    // MARK: - Output Helpers
-
-    private func printInfo(_ message: String) {
-        FileHandle.standardError.write(Data("ℹ \(message)\n".utf8))
-    }
-
-    private func printSuccess(_ message: String) {
-        FileHandle.standardError.write(Data("✓ \(message)\n".utf8))
-    }
-
-    private func printError(_ message: String) {
-        FileHandle.standardError.write(Data("✗ \(message)\n".utf8))
+    private func printError(_ msg: String) {
+        FileHandle.standardError.write(Data("error: \(msg)\n".utf8))
     }
 }
