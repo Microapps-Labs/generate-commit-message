@@ -1,6 +1,7 @@
 import Foundation
 
 /// Minimal terminal spinner with streaming text support
+@MainActor
 final class Spinner {
     private let frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
     private var currentFrame = 0
@@ -22,7 +23,7 @@ final class Spinner {
         // Hide cursor
         FileHandle.standardError.write(Data("\u{001B}[?25l".utf8))
 
-        task = Task { @MainActor in
+        task = Task {
             while self.isRunning {
                 let frame = self.frames[self.currentFrame % self.frames.count]
                 let display = self.streamedText.isEmpty ? self.message : self.streamedText

@@ -45,15 +45,15 @@ struct GCMCommand: AsyncParsableCommand {
         }
 
         // Analyze with spinner
-        let analyzeSpinner = Spinner("Analyzing")
-        analyzeSpinner.start()
+        let analyzeSpinner = await Spinner("Analyzing")
+        await analyzeSpinner.start()
 
         let context: GitContext
         do {
             context = try await gitAnalyzer.analyze()
-            analyzeSpinner.stop()
+            await analyzeSpinner.stop()
         } catch {
-            analyzeSpinner.stop()
+            await analyzeSpinner.stop()
             printError("No staged changes. Run: git add <files>")
             throw ExitCode.failure
         }
@@ -72,8 +72,8 @@ struct GCMCommand: AsyncParsableCommand {
         }
 
         // Generate with streaming spinner
-        let spinner = Spinner("Generating")
-        spinner.start()
+        let spinner = await Spinner("Generating")
+        await spinner.start()
 
         let message: String
         do {
@@ -81,11 +81,13 @@ struct GCMCommand: AsyncParsableCommand {
                 context: context,
                 config: config
             ) { token in
-                spinner.stream(token)
+                Task { @MainActor in
+                    spinner.stream(token)
+                }
             }
-            spinner.stop()
+            await spinner.stop()
         } catch {
-            spinner.stop()
+            await spinner.stop()
             printError("Generation failed: \(error.localizedDescription)")
             throw ExitCode.failure
         }
