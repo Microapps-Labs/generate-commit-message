@@ -82,20 +82,24 @@ struct GCMCommand: AsyncParsableCommand {
         let spinner = Spinner("Generating")
         spinner.start()
 
-        let message: String
+        let result: CommitMessageResult
         do {
-            message = try await backend.generateCommitMessageStreaming(
+            result = try await backend.generateCommitMessageWithRefinement(
                 context: context,
                 config: config
-            ) { token in
-                spinner.stream(token)
-            }
+            )
             spinner.stop()
+
+            if verbose && result.wasRefined {
+                print("Refined (\(result.validationIssues.count) issues fixed)")
+            }
         } catch {
             spinner.stop()
             printError("Generation failed: \(error.localizedDescription)")
             throw ExitCode.failure
         }
+
+        let message = result.message
 
         if dryRun {
             print(message)

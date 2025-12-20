@@ -142,6 +142,85 @@ final class OpenRouterBackend: AIBackend {
         return request
     }
 
+    func refineMessage(
+        draft: String,
+        context: GitContext,
+        config: GCMConfiguration,
+        issues: [ValidationIssue]
+    ) async throws -> String {
+        guard let apiKey = getApiKey() else {
+            throw AIBackendError.apiKeyMissing
+        }
+
+        let refinementPrompt = buildRefinementPrompt(draft: draft, context: context, config: config, issues: issues)
+        let systemPrompt = """
+        You are a commit message editor. Fix specific issues while preserving core meaning.
+        Output ONLY the revised commit message in conventional format: type(scope): description
+        Be precise and concise.
+        """
+
+        let request = try buildRequest(
+            apiUrl: getApiUrl(config: config),
+            apiKey: apiKey,
+            model: getModel(config: config),
+            systemPrompt: systemPrompt,
+            userPrompt: refinementPrompt,
+            stream: false
+        )
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            return draft // Fallback to draft on error
+        }
+
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let choices = json["choices"] as? [[String: Any]],
+              let message = choices.first?["message"] as? [String: Any],
+              let content = message["content"] as? String else {
+            return draft
+        }
+
+        return cleanCommitMessage(content)
+    }
+
+    private func buildRefinementPrompt(draft: String, context: GitContext, config: GCMConfiguration, issues: [ValidationIssue]) -> String {
+        var prompt = "DRAFT MESSAGE:\n\(draft)\n\nISSUES FOUND:\n"
+
+        for issue in issues {
+            prompt += "- \(issue.description)\n"
+        }
+
+        let primaryCat = determinePrimaryCategory(context.categorizedFiles)
+        let topFiles = Array(context.fileStats.sorted { $0.totalChanges > $1.totalChanges }.prefix(3))
+
+        let maxLen = config.maxLength
+        prompt += """
+
+        CONTEXT REMINDER:
+        - Primary category: \(primaryCat.rawValue) (\(context.categorizedFiles.count(for: primaryCat)) files)
+        - Key files: \(topFiles.map { $0.path }.joined(separator: ", "))
+
+        TASK: Revise the commit message to fix all issues above.
+        Keep under \(maxLen) characters.
+        Output ONLY the revised message.
+        """
+
+        return prompt
+    }
+
+    private func determinePrimaryCategory(_ categorized: CategorizedFiles) -> FileCategory {
+        let counts = [
+            (FileCategory.code, categorized.code.count),
+            (FileCategory.test, categorized.tests.count),
+            (FileCategory.doc, categorized.docs.count),
+            (FileCategory.config, categorized.config.count),
+            (FileCategory.other, categorized.other.count)
+        ]
+        return counts.max(by: { $0.1 < $1.1 })?.0 ?? .other
+    }
+
     private func cleanCommitMessage(_ message: String) -> String {
         var cleaned = message.trimmingCharacters(in: .whitespacesAndNewlines)
 

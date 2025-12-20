@@ -15,6 +15,62 @@ struct StagedFile {
     let path: String
 }
 
+/// Detailed statistics for a single file
+struct FileStats {
+    let path: String
+    let additions: Int
+    let deletions: Int
+    let status: StagedFile.Status
+    let oldPath: String?
+    let category: FileCategory
+
+    var totalChanges: Int { additions + deletions }
+    var isBinary: Bool { additions == -1 && deletions == -1 }
+}
+
+/// File categorization for intelligent context allocation
+enum FileCategory: String, Codable {
+    case code
+    case test
+    case doc
+    case config
+    case other
+
+    var weight: Double {
+        switch self {
+        case .code: return 1.0
+        case .test: return 0.6
+        case .doc: return 0.3
+        case .config: return 0.2
+        case .other: return 0.1
+        }
+    }
+}
+
+/// Files grouped by category
+struct CategorizedFiles {
+    let code: [FileStats]
+    let tests: [FileStats]
+    let docs: [FileStats]
+    let config: [FileStats]
+    let other: [FileStats]
+
+    var totalFiles: Int {
+        code.count + tests.count + docs.count + config.count + other.count
+    }
+}
+
+/// Overall changeset metrics
+struct ChangesetMetrics {
+    let totalFiles: Int
+    let totalAdditions: Int
+    let totalDeletions: Int
+    let hasRenames: Bool
+
+    var totalChanges: Int { totalAdditions + totalDeletions }
+    var isLarge: Bool { totalFiles > 10 || totalChanges > 500 }
+}
+
 /// Represents the current git repository context for commit message generation
 struct GitContext {
     /// Staged diff content from `git diff --staged`
@@ -28,6 +84,18 @@ struct GitContext {
 
     /// Summary of staged files (from git status --porcelain)
     let stagedFiles: [StagedFile]
+
+    /// Per-file statistics from --numstat
+    let fileStats: [FileStats]
+
+    /// Human-readable stat summary from --stat
+    let statSummary: String
+
+    /// Files categorized by type
+    let categorizedFiles: CategorizedFiles
+
+    /// Overall changeset metrics
+    let metrics: ChangesetMetrics
 
     /// Inferred commit type based on branch name
     var inferredType: String? {

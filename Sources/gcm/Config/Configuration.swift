@@ -21,6 +21,10 @@ struct GCMConfiguration: Codable {
     var apiUrl: String?
     var model: String?
 
+    // Refinement configuration
+    var enableRefinement: Bool
+    var smartRefinement: Bool
+
     init(
         commitStyle: CommitStyle = .conventional,
         conventionalTypes: [String] = ["feat", "fix", "docs", "chore", "refactor", "test", "perf", "ci", "build", "style"],
@@ -30,7 +34,9 @@ struct GCMConfiguration: Codable {
         bodyMaxLength: Int = 500,
         customInstructions: String? = nil,
         apiUrl: String? = nil,
-        model: String? = nil
+        model: String? = nil,
+        enableRefinement: Bool = true,
+        smartRefinement: Bool = true
     ) {
         self.commitStyle = commitStyle
         self.conventionalTypes = conventionalTypes
@@ -41,6 +47,8 @@ struct GCMConfiguration: Codable {
         self.customInstructions = customInstructions
         self.apiUrl = apiUrl
         self.model = model
+        self.enableRefinement = enableRefinement
+        self.smartRefinement = smartRefinement
     }
 
     static let defaultConfigPath: URL = {

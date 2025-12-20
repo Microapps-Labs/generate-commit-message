@@ -4,101 +4,189 @@ struct PromptBuilder {
     let config: GCMConfiguration
 
     func buildPrompt(for context: GitContext) -> String {
-        var prompt = ""
+        var sections: [String] = []
 
-        // Branch context for type inference
-        if let inferredType = context.inferredType {
-            prompt += "Branch suggests type: \(inferredType)\n"
-        }
+        sections.append(buildOverview(context))
+        sections.append(buildRecentCommits(context))
+        sections.append(buildFilesSummary(context))
+        sections.append(buildDiffs(context))
 
-        // Files summary
-        let files = context.stagedFiles.map { $0.path.split(separator: "/").last ?? Substring($0.path) }
-        prompt += "Changed: \(files.joined(separator: ", "))\n\n"
-
-        // Diff (truncated)
-        prompt += truncateDiff(context.stagedDiff)
-
-        return prompt
+        return sections.joined(separator: "\n")
     }
 
     func buildSystemPrompt() -> String {
         switch config.commitStyle {
         case .conventional:
             return """
-            Write a git commit message in conventional commits format.
+            Generate a conventional commit message.
 
-            Format: type(scope): short description
+            Format: type(scope): description
 
-            Types:
-            - feat: new feature
-            - fix: bug fix
-            - refactor: code change that neither fixes a bug nor adds a feature
-            - docs: documentation only
-            - style: formatting, missing semicolons, etc
-            - test: adding tests
-            - chore: maintenance
-
-            Good examples:
-            - feat(auth): add Google OAuth login
-            - fix(parser): handle empty input gracefully
-            - refactor(api): extract validation logic
-            - docs: update installation guide
-
-            Bad examples (DO NOT do this):
-            - feat: add feature (too vague)
-            - fix bug (missing type format)
-            - Updated the code (not imperative, no type)
+            Types: \(config.conventionalTypes.prefix(7).joined(separator: ", "))
 
             Rules:
-            - Scope is optional but helpful
-            - Use imperative mood ("add" not "added")
-            - Lowercase, no period at end
-            - Be specific about WHAT changed
-            - Max \(config.maxLength) characters
+            - Study RECENT COMMITS to match this repository's style
+            - Analyze CHANGESET to understand scale
+            - Use CATEGORIES for scope inference
+            - Be specific about what changed
+            - Imperative mood, lowercase, no period
+            - Max \(config.maxLength) chars
             - Output ONLY the commit message
+
+            Good examples:
+            - feat(auth): add OAuth2 token refresh
+            - fix(api): handle timeout in user service
+            - refactor(db): extract connection pooling
+            - docs(api): document rate limiting
             """
 
         case .gitmoji:
             return """
-            Write a git commit message with an emoji prefix.
+            Generate a gitmoji commit message.
 
             Good examples:
             - ✨ add dark mode toggle
             - 🐛 fix login timeout on slow networks
-            - ♻️ extract helper functions from main module
+            - ♻️ extract helper functions
             - 📝 document API rate limits
 
-            Common emojis:
-            ✨ feature, 🐛 bugfix, ♻️ refactor, 📝 docs, 🎨 style, ✅ tests, 🔧 config
+            Emojis: ✨ feat, 🐛 fix, ♻️ refactor, 📝 docs, 🎨 style, ✅ test
 
             Rules:
+            - Study RECENT COMMITS for style
             - Start with ONE emoji
-            - Be specific about the change
-            - Max \(config.maxLength) characters
+            - Be specific
+            - Max \(config.maxLength) chars
             - Output ONLY the commit message
             """
 
         case .simple:
             return """
-            Write a simple git commit message.
+            Generate a simple commit message.
 
             Good examples:
             - Add user profile page
-            - Fix memory leak in image cache
-            - Refactor database connection pooling
-            - Update README with Docker instructions
+            - Fix memory leak in cache
+            - Refactor database connection
+            - Update installation docs
 
             Rules:
-            - Start with capital verb (Add, Fix, Update, Refactor, Remove)
-            - Be specific about WHAT changed
-            - Max \(config.maxLength) characters
+            - Study RECENT COMMITS for style
+            - Start with capital verb
+            - Be specific
+            - Max \(config.maxLength) chars
             - Output ONLY the commit message
             """
         }
     }
 
-    private func truncateDiff(_ diff: String, maxLength: Int = 4000) -> String {
-        if diff.count <= maxLength { return diff }
-        return String(diff.prefix(maxLength)) + "\n..."
+    private func buildOverview(_ context: GitContext) -> String {
+        var overview = "CHANGESET:\n"
+        overview += "Files: \(context.metrics.totalFiles) (\(context.filesSummary))\n"
+        overview += "Lines: +\(context.metrics.totalAdditions) -\(context.metrics.totalDeletions)\n"
+        overview += "Branch: \(context.branchName)"
+
+        if let type = context.inferredType {
+            overview += " [suggests: \(type)"
+            if let scope = context.inferredScope {
+                overview += "(\(scope))"
+            }
+            overview += "]"
+        }
+
+        if context.metrics.hasRenames {
+            overview += " (includes renames)"
+        }
+
+        return overview
+    }
+
+    private func buildRecentCommits(_ context: GitContext) -> String {
+        guard !context.recentCommits.isEmpty else { return "" }
+
+        let maxCommits = context.metrics.isLarge ? 5 : 8
+        let commits = Array(context.recentCommits.prefix(maxCommits))
+
+        var section = "\n\nRECENT COMMITS (match this style):\n"
+        for commit in commits {
+            section += "  \(commit)\n"
+        }
+
+        return section
+    }
+
+    private func buildFilesSummary(_ context: GitContext) -> String {
+        let cat = context.categorizedFiles
+        var summary = "\n\nCATEGORIES:\n"
+
+        if !cat.code.isEmpty {
+            summary += "  Code: \(cat.code.count) files "
+            let stats = cat.code.reduce((0, 0)) { ($0.0 + $1.additions, $0.1 + $1.deletions) }
+            summary += "(+\(stats.0) -\(stats.1))\n"
+        }
+
+        if !cat.tests.isEmpty {
+            summary += "  Tests: \(cat.tests.count) files "
+            let stats = cat.tests.reduce((0, 0)) { ($0.0 + $1.additions, $0.1 + $1.deletions) }
+            summary += "(+\(stats.0) -\(stats.1))\n"
+        }
+
+        if !cat.docs.isEmpty {
+            summary += "  Docs: \(cat.docs.count) files "
+            let stats = cat.docs.reduce((0, 0)) { ($0.0 + $1.additions, $0.1 + $1.deletions) }
+            summary += "(+\(stats.0) -\(stats.1))\n"
+        }
+
+        if !cat.config.isEmpty {
+            summary += "  Config: \(cat.config.count) files "
+            let stats = cat.config.reduce((0, 0)) { ($0.0 + $1.additions, $0.1 + $1.deletions) }
+            summary += "(+\(stats.0) -\(stats.1))\n"
+        }
+
+        return summary
+    }
+
+    private func buildDiffs(_ context: GitContext) -> String {
+        let sampled = DiffSampler().sample(context: context)
+
+        var result = "\n\nFILES:\n"
+
+        // List files with stats
+        for file in sampled.fullDiffFiles {
+            let statusStr = file.oldPath != nil ? "R \(file.oldPath!) => \(file.path)" : "\(file.status.rawValue) \(file.path)"
+            result += "  \(statusStr) (+\(file.additions) -\(file.deletions))\n"
+        }
+
+        if !sampled.statsOnlyFiles.isEmpty {
+            result += "\nOther files (stats only):\n"
+            let limited = Array(sampled.statsOnlyFiles.prefix(15))
+            for file in limited {
+                result += "  \(file.status.rawValue) \(file.path) (+\(file.additions) -\(file.deletions))\n"
+            }
+            if sampled.statsOnlyFiles.count > 15 {
+                result += "  ... and \(sampled.statsOnlyFiles.count - 15) more files\n"
+            }
+        }
+
+        // Include diff
+        result += "\n\nDIFF:\n"
+        result += truncateDiff(context.stagedDiff, maxChars: context.metrics.isLarge ? 6000 : 10000)
+
+        return result
+    }
+
+    private func truncateDiff(_ diff: String, maxChars: Int) -> String {
+        if diff.count <= maxChars {
+            return diff
+        }
+
+        // Try to truncate at line boundaries
+        let truncated = String(diff.prefix(maxChars))
+        if let lastNewline = truncated.lastIndex(of: "\n") {
+            let cleanTruncated = String(truncated[..<lastNewline])
+            return cleanTruncated + "\n\n... (diff truncated, \(diff.count - cleanTruncated.count) chars omitted)"
+        }
+
+        return truncated + "\n..."
     }
 }

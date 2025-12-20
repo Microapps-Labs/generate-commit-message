@@ -3,6 +3,13 @@ import Foundation
 /// Callback for streaming token updates
 typealias StreamCallback = (String) -> Void
 
+/// Result of commit message generation with refinement
+struct CommitMessageResult {
+    let message: String
+    let wasRefined: Bool
+    let validationIssues: [ValidationIssue]
+}
+
 /// Protocol defining the AI backend interface for commit message generation
 protocol AIBackend {
     /// Human-readable name for this backend
@@ -35,6 +42,20 @@ protocol AIBackend {
         config: GCMConfiguration,
         onToken: @escaping StreamCallback
     ) async throws -> String
+
+    /// Generate commit message with optional refinement
+    func generateCommitMessageWithRefinement(
+        context: GitContext,
+        config: GCMConfiguration
+    ) async throws -> CommitMessageResult
+
+    /// Refine a draft commit message based on validation issues
+    func refineMessage(
+        draft: String,
+        context: GitContext,
+        config: GCMConfiguration,
+        issues: [ValidationIssue]
+    ) async throws -> String
 }
 
 // Default implementation for non-streaming backends
@@ -50,6 +71,54 @@ extension AIBackend {
         let result = try await generateCommitMessage(context: context, config: config)
         onToken(result)
         return result
+    }
+
+    func generateCommitMessageWithRefinement(
+        context: GitContext,
+        config: GCMConfiguration
+    ) async throws -> CommitMessageResult {
+        // Step 1: Generate draft
+        let draft = try await generateCommitMessage(context: context, config: config)
+
+        // Fast path: Skip refinement if disabled
+        guard config.enableRefinement else {
+            return CommitMessageResult(message: draft, wasRefined: false, validationIssues: [])
+        }
+
+        // Smart refinement: Skip for simple changes
+        if config.smartRefinement &&
+           context.metrics.totalFiles <= 2 &&
+           context.metrics.totalChanges < 50 {
+            return CommitMessageResult(message: draft, wasRefined: false, validationIssues: [])
+        }
+
+        // Step 2: Validate
+        let validator = CommitMessageValidator(config: config)
+        let validation = validator.validate(draft, context: context)
+
+        if validation.isValid {
+            return CommitMessageResult(message: draft, wasRefined: false, validationIssues: [])
+        }
+
+        // Step 3: Refine
+        let refined = try await refineMessage(
+            draft: draft,
+            context: context,
+            config: config,
+            issues: validation.issues
+        )
+
+        return CommitMessageResult(message: refined, wasRefined: true, validationIssues: validation.issues)
+    }
+
+    func refineMessage(
+        draft: String,
+        context: GitContext,
+        config: GCMConfiguration,
+        issues: [ValidationIssue]
+    ) async throws -> String {
+        // Default: return draft (backends should override)
+        return draft
     }
 }
 
