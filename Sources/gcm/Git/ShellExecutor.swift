@@ -44,10 +44,13 @@ struct ShellExecutor {
                 return
             }
 
-            process.waitUntilExit()
-
+            // IMPORTANT: Read pipe data BEFORE waitUntilExit to prevent deadlock.
+            // If output exceeds pipe buffer (~64KB), process blocks waiting to write.
+            // Reading first allows the process to complete.
             let stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
             let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+
+            process.waitUntilExit()
 
             let stdout = String(data: stdoutData, encoding: .utf8) ?? ""
             let stderr = String(data: stderrData, encoding: .utf8) ?? ""
