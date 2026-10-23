@@ -1,101 +1,87 @@
-# gcm (generate-commit-message)
+# gcm
 
-AI-powered git commit messages. Stop staring at blank commit prompts.
+Generate a Git commit message from staged changes. Preview it with `--dry-run`,
+edit it with `-n`, or let `gcm` create the commit.
 
-```bash
-$ git add .
-$ gcm
-✓ Committed with message:
-feat(auth): add JWT token refresh mechanism
-```
+On supported macOS systems, the program tries Apple's Foundation Models first.
+Otherwise it uses an OpenAI-compatible HTTP endpoint, with OpenRouter as the
+default. API mode sends change context to the configured provider.
 
-## What it does
+## Build and install
 
-`gcm` analyzes your staged changes and generates meaningful commit messages using AI:
+You need Git and Swift 5.9 or later. The Apple backend also requires an SDK that
+includes Foundation Models and a system where that model is available.
 
-- **macOS 26+**: Uses Apple's on-device Foundation Models (free, private, works offline)
-- **Linux/older macOS**: Uses OpenRouter or OpenAI-compatible APIs
-
-## Install
-
-```bash
-# Clone
-git clone https://github.com/yourusername/generate-commit-message.git
+```sh
+git clone https://github.com/Microapps-Labs/generate-commit-message.git
 cd generate-commit-message
+make install
+```
 
-# Build and install
-make install  # Installs to ~/bin/gcm
+The Makefile installs `gcm` into `~/bin`. Add that directory to your `PATH`, or
+set `PREFIX` when installing. To build without installing:
 
-# Or build from source
+```sh
 swift build -c release
-cp .build/release/gcm /usr/local/bin/
-
-# Or with Nix
-nix build
-nix profile install .
+.build/release/gcm --help
 ```
 
-## Usage
+The package declares macOS 13 as its deployment target. The source includes a
+Linux/API path, but Linux build and runtime compatibility have not been verified
+yet.
 
-```bash
-gcm              # Generate and commit
-gcm -n           # Generate, edit in $EDITOR, don't auto-commit
-gcm --dry-run    # Preview only
-gcm -v           # Verbose mode
+## Try it
+
+Run this inside a Git repository with changes you want to commit:
+
+```sh
+git add path/to/file
+gcm --dry-run
 ```
 
-## Configuration
+Review the generated message before running `gcm` to create a commit. The
+commands have different effects:
 
-```bash
-gcm --init-config  # Creates ~/.config/gcm/config.json
+| Command | Result |
+| --- | --- |
+| `gcm --dry-run` | Print the message without editing or committing |
+| `gcm -n` | Open the message in `$EDITOR`, then print it without committing |
+| `gcm` | Generate the message and run `git commit -m` |
+| `gcm -v` | Include diagnostic output |
+
+## API configuration
+
+Set these variables when using the HTTP backend:
+
+```sh
+export GCM_API_KEY='your-provider-key'
+# Optional: replace the default OpenRouter endpoint and model.
+export GCM_API_URL='https://your-provider.example/v1/chat/completions'
+export GCM_MODEL='your-model-id'
 ```
 
-```json
-{
-  "commitStyle": "conventional",
-  "conventionalTypes": ["feat", "fix", "docs", "chore", "refactor", "test", "perf"],
-  "scopeRequired": false,
-  "maxLength": 72,
-  "includeBody": true,
-  "customInstructions": "Reference JIRA tickets when mentioned in branch names"
-}
+`GCM_API_URL` is the full chat-completions URL. Keep API keys out of version
+control. `--dry-run` still calls the selected model; it only prevents a Git commit.
+
+## Message style
+
+Create the configuration file with:
+
+```sh
+gcm --init-config
 ```
 
-### Commit Styles
+Edit `~/.config/gcm/config.json` to choose a conventional, simple or gitmoji
+message style, length limits and custom instructions. See
+[the configuration type](Sources/gcm/Config/Configuration.swift) for the current
+options and defaults. The implementation reads branch names, recent commit
+messages and file changes as context, and can refine messages after validation.
 
-- `conventional` — `feat(scope): description` (default)
-- `simple` — Plain descriptive messages
-- `gitmoji` — `✨ Add new feature`
+## Status
 
-## Environment Variables
-
-For Linux or older macOS (when Apple Intelligence isn't available):
-
-```bash
-export GCM_API_KEY="your-api-key"           # Required
-export GCM_API_URL="https://..."            # Optional, defaults to OpenRouter
-export GCM_MODEL="anthropic/claude-3.5-sonnet"  # Optional
-```
-
-## Smart Features
-
-- **Intelligent diff parsing**: File categorization, statistics, rename detection
-- **Multi-step refinement**: Validates and improves message quality
-- **Branch inference**: `feature/auth` → `feat(auth):`, `fix/login-bug` → `fix(login):`
-- **Style matching**: Analyzes recent commits to match your repo's style
-- **Context-aware**: File stats, categories, and smart sampling for large changesets
-
-## Requirements
-
-- macOS 13+ or Linux
-- Swift 5.9+
-- For Apple Intelligence: macOS 26+ with Apple Silicon
-
-## Author
-
-Created by [Oleg Pustovit](https://github.com/nexo-tech)
+This is a source-built tool. A successful build and a real generation capture
+are still needed before this README can demonstrate the full workflow.
 
 ## License
 
-MIT
-
+[MIT](LICENSE).
